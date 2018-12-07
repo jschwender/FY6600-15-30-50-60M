@@ -1,0 +1,211 @@
+#!/bin/bash
+# library for communication with FY 6600 signal generator via USB (serial adapter built in)
+#    fy6600-lib is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    fy6600-lib is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with fy6600-lib.  If not, see <http://www.gnu.org/licenses/>.
+#
+#    Author: Joachim Schwender <joachim@schwender-beyer.de>
+#
+##Bus 001 Device 007: ID 1a86:7523 QinHeng Electronics HL-340 USB-Serial adapter
+# code requires bash shell, stty, bc
+#
+export LC_ALL=C
+DEV=/dev/ttyUSB0
+# for choosing main or sub channel
+Main='M'
+Sub='F'
+# Wave form as an array for displaying the name read from the device
+WF=(Sine Rectangular CMOS Triangle FallSawtoothWave StepTriangleWave PositiveStepWave InverseStepWave PositiveExponentWave InverseExponentWave PositiveFallingExponentWave InverseFallingExponentWave PositiveLogarithmWave InverseLogarithmWave PositiveFallingLogarithmWave InverseFallingLogarithmWave PositiveHalfWave NegativeHalfWave PositiveHalfWaveRectification NegativeHalfWaveRectification LorenzPulseWave MultitoneWave RandomNoiseWave ElectrocardiogramECGWave TrapezoidalPulseWave SincPulseWave NarrowPulseWave GaussWhiteNoiseWave AMWave FMWave LinearFMWave ArbitraryWaveform1 ArbitraryWaveform2 ArbitraryWaveform3 ArbitraryWaveform4 ArbitraryWaveform5 ArbitraryWaveform6 ArbitraryWaveform7 ArbitraryWaveform8 ArbitraryWaveform9 ArbitraryWaveform10 ArbitraryWaveform11 ArbitraryWaveform12 ArbitraryWaveform13 ArbitraryWaveform14 ArbitraryWaveform15 ArbitraryWaveform16)
+MT=(FSK ASK PSK BURS AM FM FW)
+# Names for setting the wave form
+wfSine='00'
+wfRectangular='01'
+wfCMOS='02'
+wfTriangle='03'
+wfFallSawtoothWave='04'
+wfStepTriangleWave='05'
+wfPositiveStepWave='06'
+wfInverseStepWave='07'
+wfPositiveExponentWave='08'
+wfInverseExponentWave='09'
+wfPositiveFallingExponentWave='10'
+wfInverseFallingExponentWave='11'
+wfPositiveLogarithmWave='12'
+wfInverseLogarithmWave='13'
+wfPositiveFallingLogarithmWave='14'
+wfInverseFallingLogarithmWave='15'
+wfPositiveHalfWave='16'
+wfNegativeHalfWave='17'
+wfPositiveHalfWaveRectification='18'
+wfNegativeHalfWaveRectification='19'
+wfLorenzPulseWave='20'
+wfMultitoneWave='21'
+wfRandomNoiseWave='22'
+wfElectrocardiogramECGWave='23'
+wfTrapezoidalPulseWave='24'
+wfSincPulseWave='25'
+wfNarrowPulseWave='26'
+wfGaussWhiteNoiseWave='27'
+wfAMWave='28'
+wfFMWave='29'
+wfLinearFMWave='30'
+wfArbitraryWaveform1='31'
+wfArbitraryWaveform2='32'
+wfArbitraryWaveform3='33'
+wfArbitraryWaveform4='34'
+wfArbitraryWaveform5='35'
+wfArbitraryWaveform6='36'
+wfArbitraryWaveform7='37'
+wfArbitraryWaveform8='38'
+wfArbitraryWaveform9='39'
+wfArbitraryWaveform10='40'
+wfArbitraryWaveform11='41'
+wfArbitraryWaveform12='42'
+wfArbitraryWaveform13='43'
+wfArbitraryWaveform14='44'
+wfArbitraryWaveform15='45'
+wfArbitraryWaveform16='46'
+# Names and codes for trigger modes
+TriggerMode=(Disabled CH2 Extern Manual)
+tmDisabled=0
+tmCH2=1
+tmExtern=2
+tmManual=3
+# names and codes for sweep objects
+SweepOpbject=(Freq Ampl Offset Duty)
+soFrequency=0
+soAmplitude=1
+soOffset=2
+soDuty=3
+#
+SweepMode=(Linear Log)
+smLinear=0
+smLog=1
+SetupDEV() {
+    echo "device setup:   configure $DEV with 115200 Bps"
+    [ -w $DEV ] || { echo "device $DEV is not writable. ENDE"; exit 1; }
+    stty -F "$DEV" speed 115200 cs8
+}
+IsEnabled() {
+   case "$1" in
+      0) echo "0" ;;  # disabled
+    255) echo "1" ;;  # enabled
+      *) echo "2" ;;  # error
+   esac
+}
+SetAmplitude()    { local XX=""; printf "W%sA%02.4f\\n" "$1" "$2" > "$DEV"; read -r XX < "$DEV"; }  # Main|Sub    float value [0…20] in V
+SetF()            { local XX=""; printf "W%sF%014i\\n"  "$1" "$2" > "$DEV"; read -r XX < "$DEV"; }  # M|F, pos int value up to 14 digits in µHz
+SetOffset()       { local XX=""; printf "W%sO%2.3f\\n"  "$1" "$2" > "$DEV"; read -r XX < "$DEV"; }  # M|F, float value [-10…10]
+SetDuty()         { local XX=""; printf "W%sD%2.3f\\n"  "$1" "$2" > "$DEV"; read -r XX < "$DEV"; }  # M|F, float value [0…99.999]
+SetPhase()        { local XX=""; printf "W%sP%2.3f\\n"  "$1" "$2" > "$DEV"; read -r XX < "$DEV"; }  # M|F, float value 0…359.999
+SetWaveform()     { local XX=""; printf "W%sW%02i\\n"   "$1" "$2" > "$DEV"; read -r XX < "$DEV"; }  # M|F, int value [0…94]
+SetPulsePeriod()  { local XX=""; printf "W%sS%i\\n"     "$1" "$2" > "$DEV"; read -r XX < "$DEV"; }  # M|F, int value in ns
+SetOff()          { local XX=""; printf "W%sN0\\n"      "$1"      > "$DEV"; read -r XX < "$DEV"; }  # M|F, switch output off
+SetOn()           { local XX=""; printf "W%sN1\\n"      "$1"      > "$DEV"; read -r XX < "$DEV"; }  # M|F, switch output on
+#
+ReadWaveForm()    { local XX=""; printf "R%sW\\n"       "$1"      > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }  # int value Main[0…94] Sub[0…46]
+ReadF()           { local XX=""; printf "R%sF\\n"       "$1"      > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }  # float value in Hz
+ReadAmplitude()   { local XX=""; printf "R%sA\\n"       "$1"      > "$DEV"; read -r XX < "$DEV"; echo "scale=4;$XX / 10000"|bc; }  # unit is mV we want to return V
+ReadOffset()      { local XX=""; printf "R%sO\\n"       "$1"      > "$DEV"; read -r XX < "$DEV"; if [ $XX -le 10000 ]; then echo "scale=4;$XX / 1000.0"|bc; else echo "scale=4;( $XX - 2^32 ) / 1000"|bc; fi;}  # unit is mV we want to return V
+ReadDuty()        { local XX=""; printf "R%sD\\n"       "$1"      > "$DEV"; read -r XX < "$DEV"; echo "scale=3;$XX/1000"|bc; }         # int value in %*1000
+ReadPhase()       { local XX=""; printf "R%sP\\n"       "$1"      > "$DEV"; read -r XX < "$DEV"; echo "scale=3;$XX/1000"|bc; }         # unit is degrees*10
+ReadPulsePeriod() { local XX=""; printf "RSS\\n"                  > "$DEV"; read -r XX < "$DEV"; echo "$(( XX / 1e9 ))"; }   # unit is ns, we turn it into s
+ReadUID()         { local XX=""; printf "UID\\n"                  > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }
+ReadModelNumber() { local XX=""; printf "UMO\\n"                  > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }
+#
+SetTriggerMode()   { local XX=""; printf "WPM%i\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 0 disabled, 1 Main is triggered by Sec, 2 Main is triggered by ext., 3 single time triggered by command sent
+SetBurstNumber()   { local XX=""; printf "WPN%i\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # [0…1048575]
+SetFSKsecF()       { local XX=""; printf "WFK%f\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }    # float value in Hz
+# DEFECT!! do not work like documented in the original manual!!!
+SetASKMode()       { local XX=""; printf "WTA%i\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 0 normal out no modulation, 1 modulation from ext input, 2 manual modulation.
+SetFSKMode()       { local XX=""; printf "WTF%i\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 0 normal out no modulation, 1 modulation from ext input, 2 manual modulation.
+SetPSKMode()       { local XX=""; printf "WTP%i\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 0 normal out no modulation, 1 modulation from ext input, 2 manual modulation.
+# NEW!! not documented in original manual!!!
+SetFMBias()        { local XX=""; printf "WFM%f\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # float number [0…60M]
+SetPMPhase()       { local XX=""; printf "WPP%f\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # float number [0…359.99]
+SetAMRate()        { local XX=""; printf "WPR%f\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # float number [0…200.0] in %
+SetModTyp()        { local XX=""; printf "WPF%i\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # [0…6] ~to FSK ASK PSK BURS AM FM PM
+#
+ReadTriggerMode()  { local XX=""; printf "RPM\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # 0 diabled, 1 Main is triggered by Sec, 2 Main is triggered by ext., 3 single time triggered by command sent
+ReadBurstNumber()  { local XX=""; printf "RPN\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # int value representing the number of occured trigger on Main
+# NEW!! not documented in original manual!!!
+ReadFMBias()       { local XX=""; printf "RFM\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # bias voltage
+ReadPMPhase()      { local XX=""; printf "RPP\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # Phase in °×100, 1600--> 16.00°
+ReadAMRate()       { local XX=""; printf "RPR\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # rate of AM modulation in %×10
+ReadModTyp()       { local XX=""; printf "RPF\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # [0…6]   FSK ASK PSK BURS AM FM FW  (no range check in device!!!)
+# undocumented commands, they are accepted but without effect.
+SetX1()           { local XX=""; printf "WMT%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   #
+SetX2()           { local XX=""; printf "RFT%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   #
+SetX4()           { local XX=""; printf "RUL%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   #
+SetX5()           { local XX=""; printf "RXY%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   #
+# undocumented commands, return apperantly fixed values
+ReadX1()          { local XX=""; printf "RMT\\n"        > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   #
+ReadX2()          { local XX=""; printf "RFT\\n"        > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   #
+ReadX4()          { local XX=""; printf "RUL\\n"        > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   #
+ReadX5()          { local XX=""; printf "RXY\\n"        > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   #
+# DEFECT!! do not work like documented in the original manual!!!
+ReadASKMode()      { local XX=""; printf "RTA\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # 0 normal out no modulation, 1 modulation from ext input, 2 manual modulation.
+ReadFSKMode()      { local XX=""; printf "RTF\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # 0 normal out no modulation, 1 modulation from ext input, 2 manual modulation.
+ReadPSKMode()      { local XX=""; printf "RTP\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }   # 0 normal out no modulation, 1 modulation from ext input, 2 manual modulation.
+#
+ReadFSKsecF()      { local XX=""; printf "RFK\\n" > "$DEV"; read -r XX < "$DEV"; echo "scale=12;$XX / 10"|bc; }         # 10*Hz
+#  extermal measurement
+SetCouplingDC()    { local XX=""; printf "WCC0\\n" > "$DEV" ; read -r XX < "$DEV"; }
+SetCouplingAC()    { local XX=""; printf "WCC1\\n" > "$DEV" ; read -r XX < "$DEV"; }
+SetGateTime()      { local XX=""; printf "WCG%s\\n" "$1" > "$DEV"; }                              # 0=1s, 1=10s, 2=100s gate time for measurement
+#
+ReadExternalF()    { local XX=""; printf "RCF\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX/$(ReadGateTime)"; }        # unit is Hz/Gatetime
+ReadExtCnt()       { local XX=""; printf "RCC\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }         # unit is 1
+ReadExtCntPeriod() { local XX=""; printf "RCT\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }         # unit is ns
+ReadExtPosPulse()  { local XX=""; printf "RC+\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }         # unit is ns
+ReadExtNegPulse()  { local XX=""; printf "RC-\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }         # unit is ns
+ReadExtDuty()      { local XX=""; printf "RCD\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }         # unit is 10*%
+ReadGateTime()     { local XX=""; printf "RCT\\n" > "$DEV"; read -r XX < "$DEV"; echo "$XX"; }         # unit is 10^x (0->1 1->10 2->100)
+#
+SetSweepObject()     { local XX=""; printf "SOB%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 0,1,2,3
+SetSweepStart()      { local XX=""; printf "SST%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 
+SetSweepEnd()        { local XX=""; printf "SEN%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 
+SetSweepTime()       { local XX=""; printf "STI%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   #
+SetSweepMode()       { local XX=""; printf "SMO%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 0,1
+SetSweepOn()         { local XX=""; printf "SBE0\\n"       > "$DEV"; read -r XX < "$DEV"; }   #
+SetSweepOff()        { local XX=""; printf "SBE1\\n"       > "$DEV"; read -r XX < "$DEV"; }   #
+SetSweepCtrlTime()   { local XX=""; printf "SXY0\\n"       > "$DEV"; read -r XX < "$DEV"; }   #
+SetSweepCtrlAnalog() { local XX=""; printf "SXY1\\n"       > "$DEV"; read -r XX < "$DEV"; }   #
+#   save and restore
+SaveParamAll()       { local XX=""; printf "USN%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 2,3,4...20
+SaveParamToDefault() { local XX=""; printf "USN01\\n"      > "$DEV"; read -r XX < "$DEV"; }   # save Amplitude, Frequncy.... as default
+LoadParamSet()       { local XX=""; printf "ULN%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }
+#
+AddSyncMode()        { local XX=""; printf "USA%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # 0...4 Does not work in sweep mode
+CancelSyncMode()     { local XX=""; printf "USD%s\\n" "$1" > "$DEV"; read -r XX < "$DEV"; }   # Does not work in sweep mode
+ReadSyncWaveForm()   { local XX=""; printf "RSA0\\n"  > "$DEV"; read -r XX < "$DEV"; IsEnabled "$XX"; }
+ReadSyncF()          { local XX=""; printf "RSA1\\n"  > "$DEV"; read -r XX < "$DEV"; IsEnabled "$XX"; }
+ReadSyncAmplitude()  { local XX=""; printf "RSA2\\n"  > "$DEV"; read -r XX < "$DEV"; IsEnabled "$XX"; }
+ReadSyncOffset()     { local XX=""; printf "RSA3\\n"  > "$DEV"; read -r XX < "$DEV"; IsEnabled "$XX"; }
+ReadSyncDuty()       { local XX=""; printf "RSA4\\n"  > "$DEV"; read -r XX < "$DEV"; IsEnabled "$XX"; }
+ReadBuzzerStatus()   { local XX=""; printf "RBZ\\n"   > "$DEV"; read -r XX < "$DEV"; IsEnabled "$XX"; }
+ReadUplinkMode()     { local XX=""; printf "RMS\\n"   > "$DEV"; read -r XX < "$DEV"; IsEnabled "$XX"; }
+ReadOutputStatus()   { local XX=""; printf "R%sN\\n"  "$1" > "$DEV"; read -r XX < "$DEV"; IsEnabled "$XX"; }
+#
+SetUplinkMaster()    { local XX=""; printf "UMS0\\n"       > "$DEV"; read -r XX < "$DEV"; }
+SetUplinkSlave()     { local XX=""; printf "UMS1\\n"       > "$DEV"; read -r XX < "$DEV"; }
+UplinkDisable()      { local XX=""; printf "UML0\\n"       > "$DEV"; read -r XX < "$DEV"; }
+UplinkEnable()       { local XX=""; printf "UML1\\n"       > "$DEV"; read -r XX < "$DEV"; }
+#
+BuzzerDisable()      { local XX=""; printf "UBZ0\\n"       > "$DEV"; read -r XX < "$DEV"; }
+BuzzerEnable()       { local XX=""; printf "UBZ1\\n"       > "$DEV"; read -r XX < "$DEV"; }
+
+ResetCnt()           { printf "WCZ0\\n" > "$DEV" ; read -r XX < "$DEV"; }
+PauseCnt()           { printf "WCP0\\n" > "$DEV" ; read -r XX < "$DEV"; }
+
+SetupDEV
+#  END OF LIBRARY
