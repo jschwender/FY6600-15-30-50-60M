@@ -1,0 +1,3 @@
+These measurements have been performed with a Asus Xonar U7 Soundcard, which has a 24 bit / 192 KHz converter.
+As a reference a measurement with nothing plugged into the soundcard is also included.
+The load to the FY6600 was only the Xonar U7 input impedance, which is some KOhm.
